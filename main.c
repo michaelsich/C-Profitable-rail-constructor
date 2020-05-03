@@ -29,13 +29,31 @@ typedef struct PriceTableData
 #define WRITE               "w+"        // writing to file flag
 #define READ_ONLY           "r"         // reading from file flag
 #define DELIMITER           ','         // delimiter of input file content
+#define ERROR_IN_LINE       'e'         // case def for output -error in line
+#define ERROR_IN_DIR        'i'         // case def for output -error in input dir
+#define ERROR_EMPTY         'x'         // case def for output -error input empty
+#define ERROR_USAGE         'u'         // case def for output -error in args
+#define OUTPUT_CORRECT      'n'         // case def for output -success run
 #define MIN_NATURAL_NUM     0           // minimal natural number to work with
 #define BASE_FOR_NUMBERS    10          // Base to work with strtol
 #define MIN_PART_LENGTH     1           // minimal length of single rail part
 #define MIN_ALLOC_PARTS     15          // minimal allocated cells of RailPart in array
 #define SPECIAL_ROWS        1           // additional rows in table (extra to desired len)
 
-const int   MAX_LEN_LINE                = 1025; // 1024 + /0
+#define MSG_IN_LINE         "Invalid input in line:"
+#define MSG_NO_INPUT_FILE   "File doesn't exists."
+#define MSG_USAGE           "Usage: RailWayPlanner <InputFile>"
+#define MSG_EMPTY_FILE      "File is empty."
+#define MSG_OPTIMAL_PRICE   "The minimal price is:"
+
+
+const int       MAX_LEN_LINE        = 1025; // 1024 + /0
+const int       DEFAULT_OPTIMAL_VAL = -1;   // output val in case no optimal price for len
+const char      OUTPUT_DIR[100]      = "/home/michael/CLionProjects/C_ex2/railway_planner_output"
+                                      ".txt";   // output file
+// directory
+// directory
+
 //endregion
 
 //region GLOBALS
@@ -125,6 +143,10 @@ int findMinPrice(int **mainTable,
 
 int findSuffixCol(PriceTableData* tableData, int** table, char suffix);
 
+int findOptimalPrice(const PriceTableData* tableData, int** table);
+
+
+void writeOutput(char oCase,const int appendix);
 //endregion
 
 
@@ -139,6 +161,8 @@ int main(const int argc, const char *argv[])
 
     //TODO: delete this:
     char file_adr[70] = "/home/michael/CLionProjects/C_ex2/in.txt";
+
+    int minPrice;
     gAllParts = (RailPart*)mallocAndCheck(MIN_ALLOC_PARTS * sizeof(RailPart));
 
     PriceTableData* tableData = readFileData(file_adr);     // allocated pointer + 'types' allocated
@@ -150,9 +174,10 @@ int main(const int argc, const char *argv[])
     //TODO: delete printers
 //    printArr();
 //    printf("-----\n");
-    printTable(mainTable, tableData);
-
+//    printTable(mainTable, tableData);
+    minPrice = findOptimalPrice(tableData, mainTable);
     freeMainTable(mainTable, tableData);
+    writeOutput(OUTPUT_CORRECT, minPrice);
     return EXIT_SUCCESS;
 }
 
@@ -226,6 +251,7 @@ int fillMinPrices(int** mainTable, PriceTableData* tableData)
         }
     }
 }
+
 int findMinPrice(int **mainTable, PriceTableData *tableData, const char suffix, const int len)
 {
     int     new_price   = INT_MAX,
@@ -235,17 +261,13 @@ int findMinPrice(int **mainTable, PriceTableData *tableData, const char suffix, 
 
     for (int p = 0; p < gIndexAllParts; ++p)  // p = part index (in parts array)
     {
-        //TODO: delete debug
-        if (p == 4 && len == 3)
-            printf("%c %c | %d %d\n", gAllParts[p].leftConnection, gAllParts[p].rightConnection,
-                    gAllParts[p].length, gAllParts[p].price);
         if (    isMatchingEnd(&gAllParts[p], suffix)
             &&  isMatchingLen(&gAllParts[p], len)    )
         {
             prevSuffix      = gAllParts[p].leftConnection;
             prevSuffixCol   = findSuffixCol(tableData, mainTable, prevSuffix);
-            prevSuffixRow   = len - (int)gAllParts[p].length + SPECIAL_ROWS;
-            if (prevSuffixRow == SPECIAL_ROWS)
+            prevSuffixRow   = len - (int)gAllParts[p].length;
+            if (prevSuffixRow == 0)
                 // reached zero length exactly
             {
                 if (gAllParts[p].price < new_price)
@@ -304,6 +326,23 @@ int findSuffixCol(PriceTableData* tableData, int** table, char suffix)
         }
     }
     return -1;
+}
+
+int findOptimalPrice(const PriceTableData* tableData, int** table)
+{
+    int optimalPrice = INT_MAX;
+    for (int i = 0; i < tableData->width; ++i)
+    {
+        if (table[tableData->length-1][i] < optimalPrice)
+        {
+            optimalPrice = table[tableData->length-1][i];
+        }
+    }
+    if (optimalPrice == INT_MAX)
+    {
+        return DEFAULT_OPTIMAL_VAL;
+    }
+    return optimalPrice;
 }
 //endregion
 
@@ -551,6 +590,37 @@ void createRailPart(const char left, const char right, const long len, const lon
 }
 //endregion
 
+
+void writeOutput(char oCase,const int appendix)
+{
+    char out [MAX_LEN_LINE];
+    FILE *outputFile = fopen(OUTPUT_DIR, WRITE);
+    //TODO: move up:
+    int DEF_LEN = MAX_LEN_LINE;
+    switch (oCase)
+    {
+        case ERROR_USAGE:
+            strcpy(out, MSG_USAGE);
+            break;
+        case ERROR_IN_DIR:
+            strcpy(out, MSG_NO_INPUT_FILE);
+            break;
+        case ERROR_EMPTY:
+            strcpy(out, MSG_EMPTY_FILE);
+            break;
+        case ERROR_IN_LINE:
+            snprintf(out, DEF_LEN, MSG_IN_LINE" %d." , appendix);
+            break;
+        case OUTPUT_CORRECT:
+            snprintf(out, DEF_LEN, MSG_OPTIMAL_PRICE" %d" , appendix);
+            break;
+        default:
+            break;
+    }
+
+    fputs(out, outputFile);
+    fclose(outputFile);
+}
 
 //region DEBUGGING
 //TODO: delete debug method
