@@ -33,6 +33,7 @@ typedef struct PriceTableData
 #define BASE_FOR_NUMBERS    10          // Base to work with strtol
 #define MIN_PART_LENGTH     1           // minimal length of single rail part
 #define MIN_ALLOC_PARTS     15          // minimal allocated cells of RailPart in array
+#define SPECIAL_ROWS        1           // additional rows in table (extra to desired len)
 
 const int   MAX_LEN_LINE                = 1025; // 1024 + /0
 //endregion
@@ -50,6 +51,8 @@ void* reallocAndCheck(void* ptr, size_t newSize);
 
 //TODO: delete debug method
 void printArr();
+void printTable(int** mainTable, PriceTableData* tableData);
+
 
 /**
  * @brief runs sanity checks on file (existence, empty)
@@ -70,7 +73,6 @@ int isFileExist(const char *fileName);
 int isFileEmpty(const char *fileName);
 
 PriceTableData* readFileData(const char *fileName);
-
 /**
  * @brief checks that testedNum is greater than referenceNum
  * @param testedNum the tested number
@@ -101,14 +103,32 @@ int checkConnectionType(const char connection, const char *types);
 
 void createRailPart(const char left, const char right, const long len, const long price);
 
+
+
+
 int** allocPricesTable(PriceTableData* tableData);
 
 void freeMainTable(int** mainTable, PriceTableData* tableData);
 
+int canConnect(const char leftConnector, const char prevSuffix);
+
+int isMatchingEnd(RailPart* part, const char currentConnector);
+
+int isMatchingLen(RailPart* part, const long desiredLen);
+
+int fillMinPrices(int** mainTable, PriceTableData* tableData);
+
+int findMinPrice(int **mainTable,
+                 PriceTableData *tableData,
+                 const char suffix,
+                 const int len);
+
+int findSuffixCol(PriceTableData* tableData, int** table, char suffix);
+
 //endregion
 
 
-int main(int argc, char *argv[])
+int main(const int argc, const char *argv[])
 {
 //    if (argc != 2)
 //    {
@@ -122,12 +142,19 @@ int main(int argc, char *argv[])
     gAllParts = (RailPart*)mallocAndCheck(MIN_ALLOC_PARTS * sizeof(RailPart));
 
     PriceTableData* tableData = readFileData(file_adr);     // allocated pointer + 'types' allocated
-    int** mainTable = allocPricesTable(tableData);         // allocated full dynamic table (2D)
+    int** mainTable = allocPricesTable(tableData);          // allocated full dynamic table (2D)
+    fillMinPrices(mainTable, tableData);
+
+
+
+    //TODO: delete printers
+//    printArr();
+//    printf("-----\n");
+    printTable(mainTable, tableData);
 
     freeMainTable(mainTable, tableData);
     return EXIT_SUCCESS;
 }
-
 
 //region MEMORY ALLOCTAION METHODS
 //TODO: remember to mention a malloc'd ptr should be freed
@@ -159,7 +186,7 @@ void* reallocAndCheck(void* ptr, size_t newSize)
 //region TABLE HANDLER
 int** allocPricesTable(PriceTableData* tableData)
 {
-    int ** mainTable = (int**)mallocAndCheck(sizeof(int*) * (tableData->length + 1));
+    int ** mainTable = (int**)mallocAndCheck(sizeof(int*) * (tableData->length));
 
     for (int i = 0; i < tableData->length; ++i)
     {
@@ -187,6 +214,96 @@ void freeMainTable(int** mainTable, PriceTableData* tableData)
     tableData->types = NULL;
     free(tableData);
     tableData = NULL;
+}
+
+int fillMinPrices(int** mainTable, PriceTableData* tableData)
+{
+    for (int i = SPECIAL_ROWS; i < tableData->length; ++i)
+    {
+        for (int j = 0; j < tableData->width; ++j)
+        {
+            mainTable[i][j] = findMinPrice(mainTable, tableData, mainTable[0][j], i);
+        }
+    }
+}
+int findMinPrice(int **mainTable, PriceTableData *tableData, const char suffix, const int len)
+{
+    int     new_price   = INT_MAX,
+            prevSuffixCol,
+            prevSuffixRow;
+    char    prevSuffix;
+
+    for (int p = 0; p < gIndexAllParts; ++p)  // p = part index (in parts array)
+    {
+        //TODO: delete debug
+        if (p == 4 && len == 3)
+            printf("%c %c | %d %d\n", gAllParts[p].leftConnection, gAllParts[p].rightConnection,
+                    gAllParts[p].length, gAllParts[p].price);
+        if (    isMatchingEnd(&gAllParts[p], suffix)
+            &&  isMatchingLen(&gAllParts[p], len)    )
+        {
+            prevSuffix      = gAllParts[p].leftConnection;
+            prevSuffixCol   = findSuffixCol(tableData, mainTable, prevSuffix);
+            prevSuffixRow   = len - (int)gAllParts[p].length + SPECIAL_ROWS;
+            if (prevSuffixRow == SPECIAL_ROWS)
+                // reached zero length exactly
+            {
+                if (gAllParts[p].price < new_price)
+                {
+                    new_price = (int)gAllParts[p].price;
+                }
+            }
+            else if ( canConnect(gAllParts[p].leftConnection,
+                      mainTable[0][prevSuffixCol]) )
+                // check left connector and prev suffix match
+            {
+                if (gAllParts[p].price + mainTable[prevSuffixRow][prevSuffixCol] < new_price)
+                {
+                    new_price = (int)gAllParts[p].price + mainTable[prevSuffixRow][prevSuffixCol];
+                }
+            }
+        }
+    }
+    return new_price;
+}
+
+int canConnect(const char leftConnector, const char prevSuffix)
+{
+    if (leftConnector == prevSuffix)
+    {
+        return true;
+    }
+    return false;
+}
+
+int isMatchingEnd(RailPart* part, const char currentConnector)
+{
+    if (part->rightConnection == currentConnector)
+    {
+        return true;
+    }
+    return false;
+}
+
+int isMatchingLen(RailPart* part, const long desiredLen)
+{
+    if (part->length <= desiredLen)
+    {
+        return true;
+    }
+    return false;
+}
+
+int findSuffixCol(PriceTableData* tableData, int** table, char suffix)
+{
+    for (int j = 0; j < tableData->width; ++j)
+    {
+        if (table[0][j] == suffix)
+        {
+            return j;
+        }
+    }
+    return -1;
 }
 //endregion
 
@@ -258,7 +375,7 @@ PriceTableData* readFileData(const char *fileName)
                     //TODO: add error and line number to output
                     return false;
                 }
-                tableData->length = desiredLen + 1;
+                tableData->length =(int) desiredLen + SPECIAL_ROWS;
                 break;
 
             case 2:  // number of connection types
@@ -268,7 +385,7 @@ PriceTableData* readFileData(const char *fileName)
                     //TODO: add error and line number to output
                     return false;
                 }
-                tableData->width = amountConnectionTypes;
+                tableData->width = (int) amountConnectionTypes;
                 break;
 
             case 3:  // connection types
@@ -449,5 +566,27 @@ void printArr()
         );
     }
     printf("\n");
+}
+
+void printTable(int** mainTable, PriceTableData* tableData)
+{
+    printf("\t  width\n   ");
+    for (int c = 0; c < tableData->width; ++c )
+    {
+        printf("  %c|", mainTable[0][c]);
+    }
+    printf("\n");
+    for (int i = 1; i < tableData->length; ++i)
+    {
+        printf("%d| ", i);
+        for (int j = 0; j < tableData->width; ++j)
+        {
+            if (mainTable[i][j] && mainTable[i][j] != INT_MAX)
+                printf("%d| ", mainTable[i][j]);
+            else
+                printf("XX| ");
+        }
+        printf("\n");
+    }
 }
 //endregion
