@@ -8,7 +8,10 @@
 //endregion
 
 //region STRUCTS
-//TODO: add description
+/**
+ * @brief This struct repr. a single legal railpart -
+ * params are: left connector, right connector, part length and part price
+ */
 typedef struct RailPart
 {
   char  leftConnection,
@@ -17,6 +20,10 @@ typedef struct RailPart
         price;
 } RailPart;
 
+/**
+ * @brief This stuct saves the data of the main prices table for ease of passing info around the
+ * program. params are: length (table length), width (table width) types: all possible connectors
+ */
 typedef struct PriceTableData
 {
     int     length;     // repr. all possible length +1 types row
@@ -37,22 +44,24 @@ typedef struct PriceTableData
 #define MIN_NATURAL_NUM     0           // minimal natural number to work with
 #define BASE_FOR_NUMBERS    10          // Base to work with strtol
 #define MIN_PART_LENGTH     0           // minimal length of single rail part
-#define MIN_ALLOC_PARTS     15          // minimal allocated cells of RailPart in array
+#define MIN_ALLOC_PARTS     20          // minimal allocated cells of RailPart in array
 #define SPECIAL_ROWS        1           // additional rows in table (extra to desired len)
 
 #define MAX_LEN_LINE        1025        // 1024 + /0
 #define DEFAULT_OPTIMAL_VAL -1          // output val in case no optimal price for len
+#define LINE_OF_DESIRED_LEN  1          // Line in input file of desired length
+#define LINE_OF_TYPES_NUM    2          // Line in input file of number of connection types
+#define LINE_OF_TYPES        3          // Line in input file of connection types
 
 
 #define MSG_IN_LINE                     "Invalid input in line:"
 #define MSG_NO_INPUT_FILE               "File doesn't exists."
-#define MSG_USAGE                       "Usage: RailWayPlanner <InputFile>"
+#define MSG_USAGE                       "Usage: RailwayPlanner <InputFile>"
 #define MSG_EMPTY_FILE                  "File is empty."
 #define MSG_OPTIMAL_PRICE               "The minimal price is:"
 
-//TODO: change dir
-const char      OUTPUT_DIR[100]      = "/home/michael/CLionProjects/C_ex2/railway_planner_output"
-                                      ".txt";   // output file
+const char      OUTPUT_DIR[100]      = "/home/michael/Desktop/railway_planner_output.txt";
+// output file
 
 //endregion
 
@@ -113,9 +122,9 @@ int isInteger(const long testedNum, const int refNum, const char* leftovers);
  * @param input ptr to char array containing the 3rd line of the input
  * @return ptr to array of chars with all valid symbols
  */
-char* readConnectionTypes(const long numOfChars, const char* input);
+char *readConnectionTypes(const long numOfChars, const char *input, PriceTableData *tableData);
 
-void checkPartDetail(const char *types, char *input);
+void checkPartDetail(const char *types, char *input, int lineNum, PriceTableData *tableData);
 
 int checkConnectionType(const char connection, const char *types);
 
@@ -145,6 +154,7 @@ int findSuffixCol(PriceTableData* tableData, int** table, char suffix);
 
 int findOptimalPrice(const PriceTableData* tableData, int** table);
 
+void freeForExit(void* ptrToFree);
 
 void writeOutput(char oCase, const int appendix);
 //endregion
@@ -152,32 +162,30 @@ void writeOutput(char oCase, const int appendix);
 
 int main(const int argc, const char *argv[])
 {
-//    if (argc != 2)
-//    {
-//        //TODO: add to output "Usage: RailWayPlanner <inputFile>"
-//        exit(EXIT_FAILURE);
-//    }
-//    isInputFileValid(argv[1]);
+    if (argc != 2)
+    {
+        writeOutput(ERROR_USAGE, 0); // note: 0 here has no meaning
+        exit(EXIT_FAILURE);
+    }
+    isInputFileValid(argv[1]);
 
-    //TODO: delete this:
-    char file_adr[70] = "/home/michael/CLionProjects/C_ex2/in.txt";
 
     int minPrice;
     gAllParts = (RailPart*)mallocAndCheck(MIN_ALLOC_PARTS * sizeof(RailPart));
 
-    PriceTableData* tableData = readFileData(file_adr);     // allocated pointer + 'types' allocated
+    PriceTableData* tableData = readFileData(argv[1]);     // allocated pointer + 'types' allocated
     int** mainTable = allocPricesTable(tableData);          // allocated full dynamic table (2D)
     fillMinPrices(mainTable, tableData);
 
-
-
     //TODO: delete printers
 //    printArr();
-    printf("-----\n");
-    printTable(mainTable, tableData);
+//    printf("-----\n");
+//    printTable(mainTable, tableData);
+
+
     minPrice = findOptimalPrice(tableData, mainTable);
     freeMainTable(mainTable, tableData);
-//    writeOutput(OUTPUT_CORRECT, minPrice);
+    writeOutput(OUTPUT_CORRECT, minPrice);
     return EXIT_SUCCESS;
 }
 
@@ -188,7 +196,7 @@ void* mallocAndCheck(size_t allocSize)
     void *ptr = malloc(allocSize);
     if (ptr == NULL)
     {
-        //TODO: add output malloc fail
+        // forum instructor told we could ignore leaks in this case
         exit(EXIT_FAILURE);
     }
     return ptr;
@@ -201,7 +209,6 @@ void* reallocAndCheck(void* ptr, size_t newSize)
     if (newPtr == NULL)
     {
         free(ptr);
-        //TODO: add output malloc fail
         exit(EXIT_FAILURE);
     }
     return newPtr;
@@ -228,17 +235,13 @@ void freeMainTable(int** mainTable, PriceTableData* tableData)
 {
     for (int j = 0; j < tableData->length; ++j)
     {
-        free(mainTable[j]);
-        mainTable[j] = NULL;
+        freeForExit(mainTable[j]);
     }
-    free(mainTable);
-    mainTable = NULL;
+    freeForExit(mainTable);
 
     //free tableData
-    free(tableData->types);
-    tableData->types = NULL;
-    free(tableData);
-    tableData = NULL;
+    freeForExit(tableData->types);
+    freeForExit(tableData);
 }
 
 void fillMinPrices(int** mainTable, PriceTableData* tableData)
@@ -254,10 +257,10 @@ void fillMinPrices(int** mainTable, PriceTableData* tableData)
 
 int findMinPrice(int **mainTable, PriceTableData *tableData, const char suffix, const int len)
 {
-    int     new_price   = INT_MAX,
-            prevSuffixCol,
-            prevSuffixRow;
-    char    prevSuffix;
+    int     new_price       = INT_MAX,
+            prevSuffixCol   = 0,
+            prevSuffixRow   = 0;
+    char    prevSuffix      ='\0';
 
     for (int p = 0; p < gIndexAllParts; ++p)  // p = part index (in parts array)
     {
@@ -392,9 +395,9 @@ PriceTableData* readFileData(const char *fileName)
     long    desiredLen              = 0,
             amountConnectionTypes   = 0;
 
-    char    line[MAX_LEN_LINE],
-            part_input[MAX_LEN_LINE];
-    char    *types;
+    char    line[MAX_LEN_LINE]="",
+            part_input[MAX_LEN_LINE]="";
+    char    *types = NULL;
     PriceTableData* tableData = (PriceTableData*)mallocAndCheck(sizeof(PriceTableData));
 
     FILE *file  = fopen(fileName, READ_ONLY);
@@ -410,8 +413,10 @@ PriceTableData* readFileData(const char *fileName)
                 desiredLen = strtol(line, &strLeftover, BASE_FOR_NUMBERS);
                 if (!isInteger(desiredLen, MIN_NATURAL_NUM - 1, strLeftover))
                 {
-                    //TODO: add error and line number to output
-                    return false;
+                    freeForExit(tableData);
+                    writeOutput(ERROR_IN_LINE, LINE_OF_DESIRED_LEN);
+                    fclose(file);
+                    exit(EXIT_FAILURE);
                 }
                 tableData->length = (int) desiredLen + SPECIAL_ROWS;
                 break;
@@ -420,22 +425,27 @@ PriceTableData* readFileData(const char *fileName)
                 amountConnectionTypes = strtol(line, &strLeftover, BASE_FOR_NUMBERS);
                 if (!isInteger(amountConnectionTypes, MIN_NATURAL_NUM - 1, strLeftover))
                 {
-                    //TODO: add error and line number to output
-                    return false;
+                    freeForExit(tableData);
+                    writeOutput(ERROR_IN_LINE, LINE_OF_TYPES_NUM);
+                    fclose(file);
+                    exit(EXIT_FAILURE);
                 }
                 tableData->width = (int) amountConnectionTypes;
                 break;
 
             case 3:  // connection types
-                types = readConnectionTypes(amountConnectionTypes, line);    //allocated pointer
+                // allocated pointer
+                types = readConnectionTypes(amountConnectionTypes, line, tableData);
                 break;
 
             default:   // parts details
                 strcpy(part_input, line);
-                checkPartDetail(types, part_input);    // if valid adds part to partsArr global
+                checkPartDetail(types, part_input, iLine, tableData);    // if valid adds part to
+                // partsArr global
                 break;
         }
     }
+    fclose(file);
     tableData->types = types;
     return tableData;
 }
@@ -462,13 +472,13 @@ int isInteger(const long testedNum, const int refNum, const char* leftovers)
     return false;
 }
 
-char* readConnectionTypes(const long numOfChars, const char* input)
+char *readConnectionTypes(const long numOfChars, const char *input, PriceTableData *tableData)
 {
     //TODO: add mentioning to free pointer
     char *types = (char*)malloc(numOfChars + 1);
     if (types == NULL)
     {
-        // TODO: add exit error to output
+        freeForExit(tableData);
         exit(EXIT_FAILURE);
     }
 
@@ -491,8 +501,9 @@ char* readConnectionTypes(const long numOfChars, const char* input)
             else if ( (input[i] == (char)'\n') || (input[i] == (char)DELIMITER) )
             {
                 // if even index and not a valid char
-                free(types);
-                // TODO: add error to output "in line 3"
+                freeForExit(types);
+                freeForExit(tableData);
+                writeOutput(ERROR_IN_LINE, LINE_OF_TYPES);
                 exit(EXIT_FAILURE);
             }
             types[j++] = input[i];
@@ -502,9 +513,8 @@ char* readConnectionTypes(const long numOfChars, const char* input)
     return types;
 }
 
-void checkPartDetail(const char *types, char *input)
+void checkPartDetail(const char *types, char *input, int lineNum, PriceTableData *tableData)
 {
-    //TODO: pass line number to here to throw on error
     int     i           = 0;
     long    length      = 0,
             price       = 0;
@@ -521,8 +531,10 @@ void checkPartDetail(const char *types, char *input)
                 leftConnection = *token;
                 if (!checkConnectionType(leftConnection, types))
                 {
+                    printArr();
                     free((void*)types);
-                    // TODO: add Error
+                    writeOutput(ERROR_IN_LINE, lineNum);
+                    exit(EXIT_FAILURE);
                 }
                 break;
 
@@ -531,7 +543,8 @@ void checkPartDetail(const char *types, char *input)
                 if (!checkConnectionType(rightConnection, types))
                 {
                     free((void*)types);
-                    // TODO: add Error
+                    writeOutput(ERROR_IN_LINE, lineNum);
+                    exit(EXIT_FAILURE);
                 }
                 break;
             case 2: // part length
@@ -539,7 +552,8 @@ void checkPartDetail(const char *types, char *input)
                 if(!isInteger(length, MIN_PART_LENGTH, leftovers))
                 {
                     free((void*)types);
-                    // TODO: add Error
+                    writeOutput(ERROR_IN_LINE, lineNum);
+                    exit(EXIT_FAILURE);
                 }
                 break;
             case 3: // part price
@@ -547,7 +561,8 @@ void checkPartDetail(const char *types, char *input)
                 if (!isInteger(price, MIN_NATURAL_NUM - 1, leftovers))
                 {
                     free((void*)types);
-                    // TODO: add Error
+                    writeOutput(ERROR_IN_LINE, lineNum);
+                    exit(EXIT_FAILURE);
                 }
                 break;
             default:
@@ -581,10 +596,10 @@ void createRailPart(const char left, const char right, const long len, const lon
 
     if (gPartsArrCapacity == gIndexAllParts)
     {
-        // TODO: URGENT!! figure out why crashing if realloacting
         // end of array - realloc
-//        gAllParts = reallocAndCheck(gAllParts, gPartsArrCapacity + MIN_ALLOC_PARTS);
-        gAllParts = (RailPart*)realloc(gAllParts, gPartsArrCapacity + MIN_ALLOC_PARTS);
+        gAllParts = (RailPart*)reallocAndCheck(gAllParts,
+                                               (gPartsArrCapacity + MIN_ALLOC_PARTS) * sizeof
+                                                       (RailPart));
         gPartsArrCapacity += MIN_ALLOC_PARTS;
     }
 
@@ -592,10 +607,24 @@ void createRailPart(const char left, const char right, const long len, const lon
 }
 //endregion
 
+void freeForExit(void* ptrToFree)
+{
+    if (ptrToFree)
+    {
+        free(ptrToFree);
+        ptrToFree = NULL;
+    }
+    if (gAllParts)
+    {
+        free(gAllParts);
+        gAllParts = NULL;
+    }
+}
 
 void writeOutput(char oCase, const int appendix)
 {
     char out [MAX_LEN_LINE];
+    //TODO: add checkign fopen success
     FILE *outputFile = fopen(OUTPUT_DIR, WRITE);
     //TODO: move up:
     int DEF_LEN = MAX_LEN_LINE;
@@ -619,7 +648,8 @@ void writeOutput(char oCase, const int appendix)
         default:
             break;
     }
-
+    //TODO: delete printf
+    printf("%s", out);
     fputs(out, outputFile);
     fclose(outputFile);
 }
