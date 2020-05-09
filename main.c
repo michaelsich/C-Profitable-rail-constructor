@@ -52,14 +52,14 @@ typedef struct PriceTableData
 #define LINE_OF_DESIRED_LEN  1          // Line in input file of desired length
 #define LINE_OF_TYPES_NUM    2          // Line in input file of number of connection types
 #define LINE_OF_TYPES        3          // Line in input file of connection types
-
+#define CNT_CHARS_IN_INPUT   4          // connectors chars in input of a part (inc. ',')
 
 #define MSG_IN_LINE                     "Invalid input in line:"
 #define MSG_NO_INPUT_FILE               "File doesn't exists."
 #define MSG_USAGE                       "Usage: RailwayPlanner <InputFile>"
 #define MSG_EMPTY_FILE                  "File is empty."
-#define MSG_OPTIMAL_PRICE               "The minimal price is:"
 
+#define MSG_OPTIMAL_PRICE               "The minimal price is:"
 const char      OUTPUT_DIR[100]      = "/home/michael/Desktop/railway_planner_output.txt";
 // output file
 
@@ -122,13 +122,17 @@ int isInteger(const long testedNum, const int refNum, const char* leftovers);
  * @param input ptr to char array containing the 3rd line of the input
  * @return ptr to array of chars with all valid symbols
  */
-char *readConnectionTypes(const long numOfChars, const char *input, PriceTableData *tableData);
+char * readConnectionTypes(const long numOfChars, const char *input,
+                           PriceTableData *tableData,
+                           FILE *file);
 
-void checkPartDetail(const char *types, char *input, int lineNum, PriceTableData *tableData);
+int checkPartDetail(char *input, PriceTableData *tableData);
 
 int checkConnectionType(const char connection, const char *types);
 
 void createRailPart(const char left, const char right, const long len, const long price);
+
+long extractNumber(char *input, char *leftovers);
 
 
 
@@ -334,6 +338,10 @@ int findSuffixCol(PriceTableData* tableData, int** table, char suffix)
 int findOptimalPrice(const PriceTableData* tableData, int** table)
 {
     int optimalPrice = INT_MAX;
+    if (tableData->length == MIN_NATURAL_NUM + 1)  // desired length is zero
+    {
+        return 0;
+    }
     for (int i = 0; i < tableData->width; ++i)
     {
         if (table[tableData->length-1][i] < optimalPrice)
@@ -435,18 +443,25 @@ PriceTableData* readFileData(const char *fileName)
 
             case 3:  // connection types
                 // allocated pointer
-                types = readConnectionTypes(amountConnectionTypes, line, tableData);
+                types = readConnectionTypes(amountConnectionTypes, line, tableData, file);
+                tableData->types = types;
                 break;
 
             default:   // parts details
                 strcpy(part_input, line);
-                checkPartDetail(types, part_input, iLine, tableData);    // if valid adds part to
-                // partsArr global
+                if (!checkPartDetail(part_input, tableData))
+                {
+                    writeOutput(ERROR_IN_LINE, iLine);
+                    freeForExit(types);
+                    freeForExit(tableData);
+                    fclose(file);
+                    exit(EXIT_FAILURE);
+
+                }
                 break;
         }
     }
     fclose(file);
-    tableData->types = types;
     return tableData;
 }
 
@@ -461,24 +476,28 @@ int compareToRef(const long testedNum, const int referenceNum)
 
 int isInteger(const long testedNum, const int refNum, const char* leftovers)
 {
-    if (leftovers[0] == (char)'\n' || leftovers[0] == 0)         // check that integer
-    {
-        if (compareToRef(testedNum, refNum))  // non-negative number
-        {
-            // gets here if positive int
-            return true;
-        }
+    if (leftovers && leftovers[0] == (char)'\n')
+    {  // enters if found char after number - only '\n' is valid
+        //TODO: clear this shit out
     }
+    if (compareToRef(testedNum, refNum))
+    {   // enters only  if non-negative int
+        return true;
+    }
+
     return false;
 }
 
-char *readConnectionTypes(const long numOfChars, const char *input, PriceTableData *tableData)
+char * readConnectionTypes(const long numOfChars, const char *input,
+                           PriceTableData *tableData,
+                           FILE *file)
 {
     //TODO: add mentioning to free pointer
     char *types = (char*)malloc(numOfChars + 1);
     if (types == NULL)
     {
         freeForExit(tableData);
+        fclose(file);
         exit(EXIT_FAILURE);
     }
 
@@ -503,6 +522,7 @@ char *readConnectionTypes(const long numOfChars, const char *input, PriceTableDa
                 // if even index and not a valid char
                 freeForExit(types);
                 freeForExit(tableData);
+                fclose(file);
                 writeOutput(ERROR_IN_LINE, LINE_OF_TYPES);
                 exit(EXIT_FAILURE);
             }
@@ -513,65 +533,62 @@ char *readConnectionTypes(const long numOfChars, const char *input, PriceTableDa
     return types;
 }
 
-void checkPartDetail(const char *types, char *input, int lineNum, PriceTableData *tableData)
+int checkPartDetail(char *input, PriceTableData *tableData)
 {
-    int     i           = 0;
-    long    length      = 0,
-            price       = 0;
-    const char* delimiter = ",";
-    char *leftovers;
-    char  leftConnection, rightConnection;
+    long    length      = -1, price       = -1;      // price is init with invalid value
+    char    leftConnection, rightConnection;
 
-    char* token = strtok(input, delimiter);
-    while (token != NULL)
+    for (int j = 0; j < CNT_CHARS_IN_INPUT; ++j)
     {
-        switch (i)
-        {
-            case 0: // left connection type
-                leftConnection = *token;
-                if (!checkConnectionType(leftConnection, types))
-                {
-                    printArr();
-                    free((void*)types);
-                    writeOutput(ERROR_IN_LINE, lineNum);
-                    exit(EXIT_FAILURE);
-                }
-                break;
-
-            case 1: // right connection type
-                rightConnection = *token;
-                if (!checkConnectionType(rightConnection, types))
-                {
-                    free((void*)types);
-                    writeOutput(ERROR_IN_LINE, lineNum);
-                    exit(EXIT_FAILURE);
-                }
-                break;
-            case 2: // part length
-                length = strtol(token, &leftovers, BASE_FOR_NUMBERS);
-                if(!isInteger(length, MIN_PART_LENGTH, leftovers))
-                {
-                    free((void*)types);
-                    writeOutput(ERROR_IN_LINE, lineNum);
-                    exit(EXIT_FAILURE);
-                }
-                break;
-            case 3: // part price
-                price = strtol(token, &leftovers, BASE_FOR_NUMBERS);
-                if (!isInteger(price, MIN_NATURAL_NUM - 1, leftovers))
-                {
-                    free((void*)types);
-                    writeOutput(ERROR_IN_LINE, lineNum);
-                    exit(EXIT_FAILURE);
-                }
-                break;
-            default:
-                break;
+        if ( (j % 2 == 0) && checkConnectionType(input[j], tableData->types) )
+        { // enters if connection type is valid and in valid place in input
+            switch (j)
+            {
+                case 0: // left connector
+                    leftConnection = input[j];
+                    break;
+                case 2: // right connector
+                    rightConnection = input[j];
+                    break;
+                default: // shouldn't get here
+                    return false;
+            }
         }
-        token = strtok(NULL, delimiter);
-        i++;
+        else if ( (j % 2 != 0) && input[j] == DELIMITER )
+        {   // enters if delimiter is in valid place
+            continue;
+        }
+        else
+        {
+            return false;
+        }
     }
+
+    if (input[CNT_CHARS_IN_INPUT] == DELIMITER)     // check if part's length field is empty
+    {
+        return false;
+    }
+
+    char* priceAndLen = &input[CNT_CHARS_IN_INPUT];
+    char* leftovers = NULL;     // leftovers of strtol (chars that not numbers)
+    char* delim = ",";          // seems strtol cant handle regular char...
+    char* token = strtok(priceAndLen, delim);
+    length = strtol(token, &leftovers, BASE_FOR_NUMBERS);
+
+    if(!isInteger(length, MIN_PART_LENGTH, leftovers))
+    {
+        return false;
+    }
+    //part price
+    token = strtok(NULL, delim);    // advance to next delimiter position
+    price = strtol(token, &leftovers, BASE_FOR_NUMBERS);
+    if (*token == (char)'\n' || !isInteger(price, MIN_NATURAL_NUM - 1, leftovers))
+    {
+        return false;
+    }
+
     createRailPart(leftConnection, rightConnection, length, price);
+    return true;
 }
 
 int checkConnectionType(const char connection, const char *types)
