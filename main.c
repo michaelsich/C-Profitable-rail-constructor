@@ -52,15 +52,15 @@ typedef struct PriceTableData
 #define LINE_OF_DESIRED_LEN  1          // Line in input file of desired length
 #define LINE_OF_TYPES_NUM    2          // Line in input file of number of connection types
 #define LINE_OF_TYPES        3          // Line in input file of connection types
-#define CNT_CHARS_IN_INPUT   4          // connectors chars in input of a part (inc. ',')
 
 #define MSG_IN_LINE                     "Invalid input in line:"
 #define MSG_NO_INPUT_FILE               "File doesn't exists."
 #define MSG_USAGE                       "Usage: RailwayPlanner <InputFile>"
 #define MSG_EMPTY_FILE                  "File is empty."
-
 #define MSG_OPTIMAL_PRICE               "The minimal price is:"
+
 const char      OUTPUT_DIR[100]      = "/home/michael/Desktop/railway_planner_output.txt";
+const char*     PART_DELIMITER       = ","; // for strtok function
 // output file
 
 //endregion
@@ -72,14 +72,19 @@ int         gPartsArrCapacity = MIN_ALLOC_PARTS;    // current capacity of parts
 //endregion
 
 //region FUNCTIONS DECLARATION
+/**
+ * @brief alloc's the received size and returns a pointer to it. checks alloc success
+ * @param allocSize size to alloc
+ * @return alloc'd pointer NOTE! THIS POINTER SHOULD BE FREED BY CALLER
+ */
 void* mallocAndCheck(size_t allocSize);
-
+/**
+ * @brief relloc's the received size and  pointer. checks realloc success
+ * @param ptr pointer to current allocated memory
+ * @param newSize size to alloc
+ * @return alloc'd pointer NOTE! THIS POINTER SHOULD BE FREED BY CALLER
+ */
 void* reallocAndCheck(void* ptr, size_t newSize);
-
-//TODO: delete debug method
-void printArr();
-void printTable(int** mainTable, PriceTableData* tableData);
-
 
 /**
  * @brief runs sanity checks on file (existence, empty)
@@ -98,7 +103,12 @@ int isFileExist(const char *fileName);
  * @return true if empty, false otherwise
  */
 int isFileEmpty(const char *fileName);
-
+/**
+ * @brief parses, checks and handles the input file data
+ * @param fileName input file to be analyzed
+ * @return pointer to a struct containing the prices tables data (see struct doc)
+ *          NOTE: this pointer is alloc`d and should be freed by caller
+ */
 PriceTableData* readFileData(const char *fileName);
 /**
  * @brief checks that testedNum is greater than referenceNum
@@ -109,7 +119,7 @@ PriceTableData* readFileData(const char *fileName);
 int compareToRef(const long testedNum, const int referenceNum);
 /**
  * @brief checks that testedNum is an int greater than refNum
- * @param testedNum the number to test (long, result of strtol)
+ * @param testedNum the number to test (type long, result of strtol)
  * @param refNum a reference number to check testedNum is greater than him
  * @param leftovers ptr tp char array containing the remains of the string of strtol
  * @return true if int and greater than refNum, false otherwise
@@ -120,50 +130,129 @@ int isInteger(const long testedNum, const int refNum, const char* leftovers);
  * NOTE: this function returns an allocated pointer that should be freed when served its purpose
  * @param numOfChars the number of chars to be found (line 2 of input file)
  * @param input ptr to char array containing the 3rd line of the input
- * @return ptr to array of chars with all valid symbols
+ * @param tableData current information on prices table, passed to free memory in case of error
+ * @param file input file - passed in case of error found to close file
+ * @return ptr to array of chars with all valid symbols (allocated)
  */
 char * readConnectionTypes(const long numOfChars, const char *input,
                            PriceTableData *tableData,
                            FILE *file);
-
+/**
+ * @brief checks if single part information is valid, if valid adds details to gPartsArr
+ * @param input current line of input (to be analyzed)
+ * @param tableData table information containing valid connectors information
+ * @return true - if adding part to array succeded, false otherwise
+ */
 int checkPartDetail(char *input, PriceTableData *tableData);
-
+/**
+ * @brief checks that received connection appears in given connector types
+ * @param connection char repr. the tested connector
+ * @param types char array containing al valid possible connectors
+ * @return true if valid, false otherwise
+ */
 int checkConnectionType(const char connection, const char *types);
-
+/**
+ * @brief creates an instance of RailPart and adds it to gPartsArr
+ * @param left valid left connector of part
+ * @param right valid right connector of part
+ * @param len valid part length
+ * @param price valid price of part
+ */
 void createRailPart(const char left, const char right, const long len, const long price);
 
-long extractNumber(char *input, char *leftovers);
 
-
-
-
+/**
+ * @brief allocates all needed memory to create prices table 2d dynamic array
+ * @param tableData struct containing the size and types of the table
+ * @return pointer to int pointer array - 2d array repr. prices
+ */
 int** allocPricesTable(PriceTableData* tableData);
-
+/**
+ * @brief frees all allocated memory of the prices table
+ * @param mainTable pointer to 2d array repr. prices table to be freed
+ * @param tableData  pointer to struct containing the talbe's info
+ */
 void freeMainTable(int** mainTable, PriceTableData* tableData);
-
+/**
+ * @brief verfies current part's left connector matches previous parts connector
+ * @param leftConnector current part's left connector
+ * @param prevSuffix right connector of previous parts
+ * @return true - if connection possible, false otherwise
+ */
 int canConnect(const char leftConnector, const char prevSuffix);
-
+/**
+ * @brief checks if the current part's right connector matches desired connector accord. to table
+ * @param part current tested part pointer
+ * @param currentConnector desired connector (column in table)
+ * @return true if match, false otherwise
+ */
 int isMatchingEnd(RailPart* part, const char currentConnector);
-
+/**
+ * @brief checks that the current part's length matches the current length in table
+ * @param part current tested part
+ * @param desiredLen desired length (row in table)
+ * @return true if diff between part's length and desired length is non-negative, false otherwise
+ */
 int isMatchingLen(RailPart* part, const long desiredLen);
-
+/**
+ * @brief main method for filling prices into prices table, checks all conditions
+ * @param mainTable pointer to 2d array repr. main prices table
+ * @param tableData pointer to struct containing talbe info
+ */
 void fillMinPrices(int** mainTable, PriceTableData* tableData);
-
+/**
+ * @brief runs on all parts and finds minimal price for each cell in table
+ * @param mainTable pointer to main prices table
+ * @param tableData pointer to tables information (size types etc..)
+ * @param suffix current desired right connector
+ * @param len current desired length
+ * @return optimal price for current table cell, INT_MAX if none exists
+ */
 int findMinPrice(int **mainTable,
                  PriceTableData *tableData,
                  const char suffix,
                  const int len);
-
+/**
+ * @brief finds column of desired connector suffix
+ * @param tableData struct describing table's information
+ * @param table pointer to 2d array repr. main prices talbe
+ * @param suffix desired connector
+ * @return column number of desired connector in table
+ */
 int findSuffixCol(PriceTableData* tableData, int** table, char suffix);
-
+/**
+ * @brief finds the optimal price for inputed desired length
+ * @param table pointer to main prices table
+ * @param tableData pointer to tables information (size types etc..)
+ * @return optimal price for largest length in table, INT_MAX if none exists
+ */
 int findOptimalPrice(const PriceTableData* tableData, int** table);
-
+/**
+ * @brief frees given pointer and sets its value to NULL, frees global allocted pointers
+ * @param ptrToFree
+ */
 void freeForExit(void* ptrToFree);
-
+/**
+ * @brief frees all given pointers and exit program with FAILURE CODE
+ * @param tableData pointer to struct with info about the prices talbe
+ * @param file current open file
+ * @param types pointer to alloc'd string
+ */
+void freeTypesAndExit(PriceTableData* tableData, FILE* file, char* types);
+/**
+ * @brief creates and writes the output file
+ * @param oCase char repr. the exit case (like ENUMS)
+ * @param appendix line or price to print. should be set to 0 if not needed
+ */
 void writeOutput(char oCase, const int appendix);
 //endregion
 
-
+/**
+ * @brief entry point for RailWAyPlanner program - find optimal size for given length
+ * @param argc number of arguments
+ * @param argv arguments array
+ * @return 1 on failure, 0 on success
+ */
 int main(const int argc, const char *argv[])
 {
     if (argc != 2)
@@ -181,12 +270,6 @@ int main(const int argc, const char *argv[])
     int** mainTable = allocPricesTable(tableData);          // allocated full dynamic table (2D)
     fillMinPrices(mainTable, tableData);
 
-    //TODO: delete printers
-//    printArr();
-//    printf("-----\n");
-//    printTable(mainTable, tableData);
-
-
     minPrice = findOptimalPrice(tableData, mainTable);
     freeMainTable(mainTable, tableData);
     writeOutput(OUTPUT_CORRECT, minPrice);
@@ -194,7 +277,11 @@ int main(const int argc, const char *argv[])
 }
 
 //region MEMORY ALLOCTAION METHODS
-//TODO: remember to mention a malloc'd ptr should be freed
+/**
+ * @brief alloc's the received size and returns a pointer to it. checks alloc success
+ * @param allocSize size to alloc
+ * @return alloc'd pointer NOTE! THIS POINTER SHOULD BE FREED BY CALLER
+ */
 void* mallocAndCheck(size_t allocSize)
 {
     void *ptr = malloc(allocSize);
@@ -205,8 +292,12 @@ void* mallocAndCheck(size_t allocSize)
     }
     return ptr;
 }
-
-//TODO: remember to mention a malloc'd ptr should be freed
+/**
+ * @brief relloc's the received size and  pointer. checks realloc success
+ * @param ptr pointer to current allocated memory
+ * @param newSize size to alloc
+ * @return alloc'd pointer NOTE! THIS POINTER SHOULD BE FREED BY CALLER
+ */
 void* reallocAndCheck(void* ptr, size_t newSize)
 {
     void *newPtr = realloc(ptr, newSize);
@@ -220,6 +311,11 @@ void* reallocAndCheck(void* ptr, size_t newSize)
 //endregion
 
 //region TABLE HANDLER
+/**
+ * @brief allocates all needed memory to create prices table 2d dynamic array
+ * @param tableData struct containing the size and types of the table
+ * @return pointer to int pointer array - 2d array repr. prices
+ */
 int** allocPricesTable(PriceTableData* tableData)
 {
     int ** mainTable = (int**)mallocAndCheck(sizeof(int*) * (tableData->length));
@@ -235,6 +331,11 @@ int** allocPricesTable(PriceTableData* tableData)
     return mainTable;
 }
 
+/**
+ * @brief frees all allocated memory of the prices table
+ * @param mainTable pointer to 2d array repr. prices table to be freed
+ * @param tableData  pointer to struct containing the talbe's info
+ */
 void freeMainTable(int** mainTable, PriceTableData* tableData)
 {
     for (int j = 0; j < tableData->length; ++j)
@@ -248,6 +349,11 @@ void freeMainTable(int** mainTable, PriceTableData* tableData)
     freeForExit(tableData);
 }
 
+/**
+ * @brief main method for filling prices into prices table, checks all conditions
+ * @param mainTable pointer to 2d array repr. main prices table
+ * @param tableData pointer to struct containing talbe info
+ */
 void fillMinPrices(int** mainTable, PriceTableData* tableData)
 {
     for (int i = SPECIAL_ROWS; i < tableData->length; ++i)
@@ -259,6 +365,14 @@ void fillMinPrices(int** mainTable, PriceTableData* tableData)
     }
 }
 
+/**
+ * @brief runs on all parts and finds minimal price for each cell in table
+ * @param mainTable pointer to main prices table
+ * @param tableData pointer to tables information (size types etc..)
+ * @param suffix current desired right connector
+ * @param len current desired length
+ * @return optimal price for current table cell, INT_MAX if none exists
+ */
 int findMinPrice(int **mainTable, PriceTableData *tableData, const char suffix, const int len)
 {
     int     new_price       = INT_MAX,
@@ -296,6 +410,12 @@ int findMinPrice(int **mainTable, PriceTableData *tableData, const char suffix, 
     return new_price;
 }
 
+/**
+ * @brief verfies current part's left connector matches previous parts connector
+ * @param leftConnector current part's left connector
+ * @param prevSuffix right connector of previous parts
+ * @return true - if connection possible, false otherwise
+ */
 int canConnect(const char leftConnector, const char prevSuffix)
 {
     if (leftConnector == prevSuffix)
@@ -305,6 +425,12 @@ int canConnect(const char leftConnector, const char prevSuffix)
     return false;
 }
 
+/**
+ * @brief checks if the current part's right connector matches desired connector accord. to table
+ * @param part current tested part pointer
+ * @param currentConnector desired connector (column in table)
+ * @return true if match, false otherwise
+ */
 int isMatchingEnd(RailPart* part, const char currentConnector)
 {
     if (part->rightConnection == currentConnector)
@@ -314,6 +440,12 @@ int isMatchingEnd(RailPart* part, const char currentConnector)
     return false;
 }
 
+/**
+ * @brief checks that the current part's length matches the current length in table
+ * @param part current tested part
+ * @param desiredLen desired length (row in table)
+ * @return true if diff between part's length and desired length is non-negative, false otherwise
+ */
 int isMatchingLen(RailPart* part, const long desiredLen)
 {
     if (part->length <= desiredLen)
@@ -323,6 +455,13 @@ int isMatchingLen(RailPart* part, const long desiredLen)
     return false;
 }
 
+/**
+ * @brief finds column of desired connector suffix
+ * @param tableData struct describing table's information
+ * @param table pointer to 2d array repr. main prices talbe
+ * @param suffix desired connector
+ * @return column number of desired connector in table
+ */
 int findSuffixCol(PriceTableData* tableData, int** table, char suffix)
 {
     for (int j = 0; j < tableData->width; ++j)
@@ -335,6 +474,12 @@ int findSuffixCol(PriceTableData* tableData, int** table, char suffix)
     return -1;
 }
 
+/**
+ * @brief finds the optimal price for inputed desired length
+ * @param table pointer to main prices table
+ * @param tableData pointer to tables information (size types etc..)
+ * @return optimal price for largest length in table, INT_MAX if none exists
+ */
 int findOptimalPrice(const PriceTableData* tableData, int** table)
 {
     int optimalPrice = INT_MAX;
@@ -358,20 +503,29 @@ int findOptimalPrice(const PriceTableData* tableData, int** table)
 //endregion
 
 //region Functions: INPUT HANDLING
+/**
+ * @brief runs sanity checks on file (existence, empty)
+ * @param fileName (string) full file address
+ */
 void isInputFileValid(const char *fileName)
 {
     if (!isFileExist(fileName))
     {
-        //TODO: add to output "File doesn't exists"
+        writeOutput(ERROR_IN_DIR, 0); // note: 0 here has no meaning
         exit(EXIT_FAILURE);
     }
     if (isFileEmpty(fileName))
     {
-        //TODO: add to output "File is empty"
+        writeOutput(ERROR_EMPTY, 0); // note: 0 here has no meaning
         exit(EXIT_FAILURE);
     }
 }
 
+/**
+ * @brief checks if a given file address exist
+ * @param fileName (string) full file address
+ * @return true if exists, false otherwise
+ */
 int isFileExist(const char *fileName)
 {
     FILE *file;
@@ -383,6 +537,11 @@ int isFileExist(const char *fileName)
     return false;
 }
 
+/**
+ * @brief checks if a given file is empty
+ * @param fileName (string) full file address
+ * @return true if empty, false otherwise
+ */
 int isFileEmpty(const char *fileName)
 {
     FILE *file = fopen(fileName, READ_ONLY);
@@ -397,15 +556,21 @@ int isFileEmpty(const char *fileName)
     return false;
 }
 
+/**
+ * @brief parses, checks and handles the input file data
+ * @param fileName input file to be analyzed
+ * @return pointer to a struct containing the prices tables data (see struct doc)
+ *          NOTE: this pointer is alloc`d and should be freed by caller
+ */
 PriceTableData* readFileData(const char *fileName)
 {
     int     iLine                   = 0;
     long    desiredLen              = 0,
             amountConnectionTypes   = 0;
 
-    char    line[MAX_LEN_LINE]="",
-            part_input[MAX_LEN_LINE]="";
-    char    *types = NULL;
+    char    line[MAX_LEN_LINE]       = "",
+            part_input[MAX_LEN_LINE] = "";
+    char*   types                   = NULL;
     PriceTableData* tableData = (PriceTableData*)mallocAndCheck(sizeof(PriceTableData));
 
     FILE *file  = fopen(fileName, READ_ONLY);
@@ -431,7 +596,7 @@ PriceTableData* readFileData(const char *fileName)
 
             case 2:  // number of connection types
                 amountConnectionTypes = strtol(line, &strLeftover, BASE_FOR_NUMBERS);
-                if (!isInteger(amountConnectionTypes, MIN_NATURAL_NUM - 1, strLeftover))
+                if (!isInteger(amountConnectionTypes, MIN_NATURAL_NUM , strLeftover))
                 {
                     freeForExit(tableData);
                     writeOutput(ERROR_IN_LINE, LINE_OF_TYPES_NUM);
@@ -442,7 +607,7 @@ PriceTableData* readFileData(const char *fileName)
                 break;
 
             case 3:  // connection types
-                // allocated pointer
+                // NOTE: allocated pointer
                 types = readConnectionTypes(amountConnectionTypes, line, tableData, file);
                 tableData->types = types;
                 break;
@@ -465,6 +630,12 @@ PriceTableData* readFileData(const char *fileName)
     return tableData;
 }
 
+/**
+ * @brief checks that testedNum is greater than referenceNum
+ * @param testedNum the tested number
+ * @param referenceNum a reference number to check testedNum is greater than him
+ * @return True if greater, false otherwise
+ */
 int compareToRef(const long testedNum, const int referenceNum)
 {
     if (testedNum > referenceNum)
@@ -474,21 +645,36 @@ int compareToRef(const long testedNum, const int referenceNum)
     return false;
 }
 
+/**
+ * @brief checks that testedNum is an int greater than refNum
+ * @param testedNum the number to test (type long, result of strtol)
+ * @param refNum a reference number to check testedNum is greater than him
+ * @param leftovers ptr tp char array containing the remains of the string of strtol
+ * @return true if int and greater than refNum, false otherwise
+ */
 int isInteger(const long testedNum, const int refNum, const char* leftovers)
 {
-    if (leftovers && leftovers[0] == (char)'\n')
-    {  // enters if found char after number - only '\n' is valid
-        //TODO: clear this shit out
+    if (leftovers[0] == (char)'\n' || leftovers[0] == 0)         // check that integer
+    {
+        if (compareToRef(testedNum, refNum))  // non-negative number
+        {
+            // gets here if positive int
+            return true;
+        }
     }
-    if (compareToRef(testedNum, refNum))
-    {   // enters only  if non-negative int
-        return true;
-    }
-
     return false;
 }
 
-char * readConnectionTypes(const long numOfChars, const char *input,
+/**
+ * @brief analyzes the 3rd line of the input file - checks validity of connections types chars
+ * NOTE: this function returns an allocated pointer that should be freed when served its purpose
+ * @param numOfChars the number of chars to be found (line 2 of input file)
+ * @param input ptr to char array containing the 3rd line of the input
+ * @param tableData current information on prices table, passed to free memory in case of error
+ * @param file input file - passed in case of error found to close file
+ * @return ptr to array of chars with all valid symbols (allocated)
+ */
+char* readConnectionTypes(const long numOfChars, const char *input,
                            PriceTableData *tableData,
                            FILE *file)
 {
@@ -504,27 +690,19 @@ char * readConnectionTypes(const long numOfChars, const char *input,
     if (numOfChars > 0)
     {
         int j = 0;
-        for (int i = 0; i <(int)strlen(input)-1; ++i)
+        for (int i = 0; i < (int)strlen(input); ++i)
         {
-            if (i % 2 != 0)
-            {
-                if ( input[i] != DELIMITER)
-                {
-                    // gets here if odd position is not delimiter
-                    free(types);
-                    // TODO: add error to output "in line 3"
-                    exit(EXIT_FAILURE);
-                }
+            if (  (i % 2 != 0)  && ( (input[i] == DELIMITER) || (input[i] == (char)'\n') )  )
+            {   // enters if index is odd and char is delimiter or end of line (valid)
                 continue;
             }
-            else if ( (input[i] == (char)'\n') || (input[i] == (char)DELIMITER) )
-            {
-                // if even index and not a valid char
-                freeForExit(types);
-                freeForExit(tableData);
-                fclose(file);
-                writeOutput(ERROR_IN_LINE, LINE_OF_TYPES);
-                exit(EXIT_FAILURE);
+            else if ( (i % 2 != 0) )
+            {       // if unexpected delimiter (invalid)
+                freeTypesAndExit(tableData, file, types);
+            }
+            else if ( (i % 2 == 0) && (( (input[i] == DELIMITER) || (input[i] == (char)'\n') )) )
+            {   // enters if even index (connector expected) but got delimiter instead
+                freeTypesAndExit(tableData, file, types);
             }
             types[j++] = input[i];
         }
@@ -533,64 +711,74 @@ char * readConnectionTypes(const long numOfChars, const char *input,
     return types;
 }
 
+
+/**
+ * @brief checks if single part information is valid, if valid adds details to gPartsArr
+ * @param input current line of input (to be analyzed)
+ * @param tableData table information containing valid connectors information
+ * @return true - if adding part to array succeded, false otherwise
+ */
 int checkPartDetail(char *input, PriceTableData *tableData)
 {
-    long    length      = -1, price       = -1;      // price is init with invalid value
-    char    leftConnection, rightConnection;
+    int     i           = 0;
+    long    length      = 0,
+            price       = 0;
+    char *leftovers;
+    char  leftConnection, rightConnection;
 
-    for (int j = 0; j < CNT_CHARS_IN_INPUT; ++j)
+    char* token = strtok(input, PART_DELIMITER);
+    while (token != NULL)
     {
-        if ( (j % 2 == 0) && checkConnectionType(input[j], tableData->types) )
-        { // enters if connection type is valid and in valid place in input
-            switch (j)
-            {
-                case 0: // left connector
-                    leftConnection = input[j];
-                    break;
-                case 2: // right connector
-                    rightConnection = input[j];
-                    break;
-                default: // shouldn't get here
-                    return false;
-            }
-        }
-        else if ( (j % 2 != 0) && input[j] == DELIMITER )
-        {   // enters if delimiter is in valid place
-            continue;
-        }
-        else
+        switch (i)
         {
-            return false;
+            case 0: // left connection type
+                leftConnection = *token;
+                if (strlen(token) != 1 || (!checkConnectionType(leftConnection, tableData->types)))
+                {   // enters if found more than 1 char or char invalid (not in types)
+                    return false;
+                }
+                break;
+
+            case 1: // right connection type
+                rightConnection = *token;
+                if (strlen(token) != 1 || (!checkConnectionType(rightConnection, tableData->types)))
+                {   // enters if found more than 1 char or char invalid (not in types)
+                    return false;
+                }
+                break;
+
+            case 2: // part length
+                length = strtol(token, &leftovers, BASE_FOR_NUMBERS);
+                if(!isInteger(length, MIN_PART_LENGTH, leftovers))
+                {
+                    return false;
+                }
+                break;
+
+            case 3: // part price
+                price = strtol(token, &leftovers, BASE_FOR_NUMBERS);
+                if (!isInteger(price, MIN_NATURAL_NUM, leftovers))
+                {
+                    return false;
+                }
+                break;
+            default:
+                break;
         }
+        token = strtok(NULL, PART_DELIMITER);
+        i++;
     }
-
-    if (input[CNT_CHARS_IN_INPUT] == DELIMITER)     // check if part's length field is empty
-    {
-        return false;
-    }
-
-    char* priceAndLen = &input[CNT_CHARS_IN_INPUT];
-    char* leftovers = NULL;     // leftovers of strtol (chars that not numbers)
-    char* delim = ",";          // seems strtol cant handle regular char...
-    char* token = strtok(priceAndLen, delim);
-    length = strtol(token, &leftovers, BASE_FOR_NUMBERS);
-
-    if(!isInteger(length, MIN_PART_LENGTH, leftovers))
-    {
-        return false;
-    }
-    //part price
-    token = strtok(NULL, delim);    // advance to next delimiter position
-    price = strtol(token, &leftovers, BASE_FOR_NUMBERS);
-    if (*token == (char)'\n' || !isInteger(price, MIN_NATURAL_NUM - 1, leftovers))
-    {
-        return false;
-    }
-
     createRailPart(leftConnection, rightConnection, length, price);
     return true;
 }
 
+
+/**
+ * @brief checks that received connection appears in given connector types
+ * @param connection char repr. the tested connector
+ * @param types char array containing al valid possible connectors
+ * @return true if valid, false otherwise
+ */
 int checkConnectionType(const char connection, const char *types)
 {
     for (int i = 0; i <(int)strlen(types); ++i)
@@ -603,6 +791,13 @@ int checkConnectionType(const char connection, const char *types)
     return false;
 }
 
+/**
+ * @brief creates an instance of RailPart and adds it to gPartsArr
+ * @param left valid left connector of part
+ * @param right valid right connector of part
+ * @param len valid part length
+ * @param price valid price of part
+ */
 void createRailPart(const char left, const char right, const long len, const long price)
 {
     RailPart newRail;
@@ -624,6 +819,12 @@ void createRailPart(const char left, const char right, const long len, const lon
 }
 //endregion
 
+
+//region FUNCTIONS: FREEiers and OUTPUT
+/**
+ * @brief frees given pointer and sets its value to NULL, frees global allocted pointers
+ * @param ptrToFree
+ */
 void freeForExit(void* ptrToFree)
 {
     if (ptrToFree)
@@ -638,13 +839,30 @@ void freeForExit(void* ptrToFree)
     }
 }
 
+/**
+ * @brief frees all given pointers and exit program with FAILURE CODE
+ * @param tableData pointer to struct with info about the prices talbe
+ * @param file current open file
+ * @param types pointer to alloc'd string
+ */
+void freeTypesAndExit(PriceTableData* tableData, FILE* file, char* types)
+{
+    freeForExit(types);
+    freeForExit(tableData);
+    fclose(file);
+    writeOutput(ERROR_IN_LINE, LINE_OF_TYPES);
+    exit(EXIT_FAILURE);
+}
+
+/**
+ * @brief creates and writes the output file
+ * @param oCase char repr. the exit case (like ENUMS)
+ * @param appendix line or price to print. should be set to 0 if not needed
+ */
 void writeOutput(char oCase, const int appendix)
 {
     char out [MAX_LEN_LINE];
-    //TODO: add checkign fopen success
     FILE *outputFile = fopen(OUTPUT_DIR, WRITE);
-    //TODO: move up:
-    int DEF_LEN = MAX_LEN_LINE;
     switch (oCase)
     {
         case ERROR_USAGE:
@@ -657,55 +875,16 @@ void writeOutput(char oCase, const int appendix)
             strcpy(out, MSG_EMPTY_FILE);
             break;
         case ERROR_IN_LINE:
-            snprintf(out, DEF_LEN, MSG_IN_LINE" %d." , appendix);
+            snprintf(out, MAX_LEN_LINE, MSG_IN_LINE" %d." , appendix);
             break;
         case OUTPUT_CORRECT:
-            snprintf(out, DEF_LEN, MSG_OPTIMAL_PRICE" %d" , appendix);
+            snprintf(out, MAX_LEN_LINE, MSG_OPTIMAL_PRICE" %d" , appendix);
             break;
         default:
             break;
     }
-    //TODO: delete printf
-    printf("%s", out);
+
     fputs(out, outputFile);
     fclose(outputFile);
-}
-
-//region DEBUGGING
-//TODO: delete debug method
-void printArr()
-{
-    for (int i = 0; i < gIndexAllParts; ++i)
-    {
-        printf("%d: %c%c %ld-%ld\n", i,
-                gAllParts[i].leftConnection,
-                gAllParts[i].rightConnection,
-                gAllParts[i].length,
-                gAllParts[i].price
-        );
-    }
-    printf("\n");
-}
-
-void printTable(int** mainTable, PriceTableData* tableData)
-{
-    printf("\t  width\n   ");
-    for (int c = 0; c < tableData->width; ++c )
-    {
-        printf("  %c|", mainTable[0][c]);
-    }
-    printf("\n");
-    for (int i = 1; i < tableData->length; ++i)
-    {
-        printf("%d| ", i);
-        for (int j = 0; j < tableData->width; ++j)
-        {
-            if (mainTable[i][j] && mainTable[i][j] != INT_MAX)
-                printf("%d| ", mainTable[i][j]);
-            else
-                printf("XX| ");
-        }
-        printf("\n");
-    }
 }
 //endregion
